@@ -1,7 +1,6 @@
 import axios from 'axios';
 
 const LOGOKIT_IMG_BASE = 'https://img.logokit.com';
-// Use dev proxy to avoid CORS during local development
 const LOGOKIT_API_BASE = process.env.NODE_ENV === 'development' ? '/logokit' : 'https://api.logokit.com';
 
 export const LOGOKIT_PK: string = process.env.REACT_APP_LOGOKIT_PK || 'pk_fr7d058e3daf4d68ca8901';
