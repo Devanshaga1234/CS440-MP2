@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const BASE_URL = '/fd';
-const API_KEY = process.env.REACT_APP_FINANCIALDATA_API_KEY || '11bae4eeb55a588482a49856b5fa63c6';
+const API_KEY = process.env.REACT_APP_FINANCIALDATA_API_KEY || '69d88fba77fd52259be201d482e4cccf';
 
 const api = axios.create({ baseURL: BASE_URL });
 
