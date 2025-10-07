@@ -1,14 +1,16 @@
 import axios from 'axios';
 
-const BASE_URL = process.env.NODE_ENV === 'development' ? '/fd' : 'https://financialdata.net';
+const BASE_URL = process.env.NODE_ENV === 'development' ? '/fd' : 'https://api.allorigins.win/get?url=';
 const API_KEY = process.env.REACT_APP_FINANCIALDATA_API_KEY || '11bae4eeb55a588482a49856b5fa63c6';
 
 const api = axios.create({ baseURL: BASE_URL });
 
-api.interceptors.request.use((config) => {
-  config.params = { ...(config.params || {}), key: API_KEY };
-  return config;
-});
+if (process.env.NODE_ENV === 'development') {
+  api.interceptors.request.use((config) => {
+    config.params = { ...(config.params || {}), key: API_KEY };
+    return config;
+  });
+}
 
 export interface Quote {
   symbol: string;
@@ -42,8 +44,15 @@ async function getWithRetry<T = any>(path: string, params?: Record<string, any>,
   let backoff = 300;
   while (true) {
     try {
-      const { data } = await api.get<T>(path, { params });
-      return data as T;
+      if (process.env.NODE_ENV === 'development') {
+        const { data } = await api.get<T>(path, { params });
+        return data as T;
+      } else {
+        const queryParams = new URLSearchParams({ ...(params || {}), key: API_KEY });
+        const fullUrl = `https://financialdata.net${path}?${queryParams.toString()}`;
+        const { data } = await api.get(encodeURIComponent(fullUrl));
+        return JSON.parse(data.contents) as T;
+      }
     } catch (err: any) {
       if (err?.response?.status === 429 && attempt < maxAttempts - 1) {
         await sleep(backoff);
