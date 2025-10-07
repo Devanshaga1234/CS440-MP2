@@ -48,50 +48,11 @@ async function getWithRetry<T = any>(path: string, params?: Record<string, any>,
         const { data } = await api.get<T>(path, { params });
         return data as T;
       } else {
-        // Try CORS proxy for production, fallback if it fails
-        try {
-          const queryParams = new URLSearchParams({ ...(params || {}), key: API_KEY });
-          const fullUrl = `https://financialdata.net${path}?${queryParams.toString()}`;
-          const { data } = await axios.get(`https://proxy.cors.sh/${fullUrl}`, { timeout: 10000 });
-          return data as T;
-        } catch (proxyError) {
-          console.warn(`CORS proxy failed for ${path}, using fallback data`);
-          
-          // Provide fallback data for price endpoints to keep the app functional
-          if (path.includes('stock-prices') || path.includes('etf-prices')) {
-            const symbol = params?.identifier || params?.trading_symbol || params?.symbol || params?.ticker || 'UNKNOWN';
-            const basePrice = Math.random() * 200 + 50;
-            return [{
-              trading_symbol: symbol,
-              close: basePrice,
-              open: basePrice * (0.95 + Math.random() * 0.1),
-              high: basePrice * (1.02 + Math.random() * 0.05),
-              low: basePrice * (0.95 + Math.random() * 0.05),
-              volume: Math.floor(Math.random() * 1000000 + 100000),
-              trade_date: new Date().toISOString().split('T')[0]
-            }, {
-              trading_symbol: symbol,
-              close: basePrice * (0.98 + Math.random() * 0.04),
-              trade_date: new Date(Date.now() - 86400000).toISOString().split('T')[0]
-            }] as T;
-          }
-          
-          if (path.includes('dividends')) {
-            const symbol = params?.identifier || params?.trading_symbol || params?.symbol || 'UNKNOWN';
-            return [{
-              trading_symbol: symbol,
-              amount: Math.random() * 2 + 0.5,
-              type: 'cash',
-              declaration_date: new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0],
-              ex_date: new Date(Date.now() - 14 * 86400000).toISOString().split('T')[0],
-              record_date: new Date(Date.now() - 12 * 86400000).toISOString().split('T')[0],
-              payment_date: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
-            }] as T;
-          }
-          
-          // Re-throw error for other endpoints
-          throw proxyError;
-        }
+        // Use CORS proxy for production
+        const queryParams = new URLSearchParams({ ...(params || {}), key: API_KEY });
+        const fullUrl = `https://financialdata.net${path}?${queryParams.toString()}`;
+        const { data } = await axios.get(`https://api.allorigins.win/raw?url=${encodeURIComponent(fullUrl)}`);
+        return data as T;
       }
     } catch (err: any) {
       if (err?.response?.status === 429 && attempt < maxAttempts - 1) {
@@ -196,23 +157,7 @@ export async function getQuote(symbol: string): Promise<Quote> {
   try {
     let arr: any[] = await fetchPrices(safeSymbol);
     if (arr.length === 0) {
-      console.warn(`No price data for ${safeSymbol}, trying fallback...`);
-      
-      // Try fallback: check if symbol exists in universe
-      const universe = await loadSymbolUniverse();
-      const found = universe.find(item => item.symbol === safeSymbol);
-      if (found) {
-        // Return a basic quote with name but no price data
-        return {
-          symbol: safeSymbol,
-          name: found.name,
-          price: 0,
-          change: 0,
-          changePercent: undefined,
-        };
-      }
-      
-      throw new Error(`No data available for ${safeSymbol}`);
+      throw new Error(`No price data available for ${safeSymbol}`);
     }
     
     const latest: any = arr[0] || {};
@@ -243,30 +188,7 @@ export async function getQuote(symbol: string): Promise<Quote> {
     };
   } catch (error) {
     console.error(`Error getting quote for ${safeSymbol}:`, error);
-    
-    // Try to at least get the name from the symbol universe
-    try {
-      const universe = await loadSymbolUniverse();
-      const found = universe.find(item => item.symbol === safeSymbol);
-      if (found) {
-        return {
-          symbol: safeSymbol,
-          name: found.name,
-          price: 0,
-          change: 0,
-          changePercent: undefined,
-        };
-      }
-    } catch {}
-    
-    // Final fallback
-    return {
-      symbol: safeSymbol,
-      name: undefined,
-      price: 0,
-      change: 0,
-      changePercent: undefined,
-    };
+    throw error;
   }
 }
 
