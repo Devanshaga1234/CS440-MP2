@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const BASE_URL = process.env.NODE_ENV === 'development' ? '/fd/api/v1' : 'https://financialdata.net/api/v1';
+const BASE_URL = process.env.NODE_ENV === 'development' ? '/fd' : 'https://financialdata.net';
 const API_KEY = process.env.REACT_APP_FINANCIALDATA_API_KEY || '11bae4eeb55a588482a49856b5fa63c6';
 
 const api = axios.create({ baseURL: BASE_URL });
@@ -90,8 +90,8 @@ function findNameInRows(rows: any[], symbol: string): string | undefined {
 async function fetchPrices(symbol: string): Promise<any[]> {
   const attempts: Array<{ path: string; params: Record<string, any> }> = [];
   const paramKeys = ['identifier', 'trading_symbol', 'symbol', 'ticker'];
-  for (const pk of paramKeys) attempts.push({ path: '/stock-prices', params: { [pk]: symbol, limit: 2 } });
-  for (const pk of paramKeys) attempts.push({ path: '/etf-prices', params: { [pk]: symbol, limit: 2 } });
+  for (const pk of paramKeys) attempts.push({ path: '/api/v1/stock-prices', params: { [pk]: symbol, limit: 2 } });
+  for (const pk of paramKeys) attempts.push({ path: '/api/v1/etf-prices', params: { [pk]: symbol, limit: 2 } });
   for (const { path, params } of attempts) {
     try {
       const data = await getWithRetry<any[]>(path, params).catch(() => []);
@@ -123,9 +123,9 @@ async function fetchPrices(symbol: string): Promise<any[]> {
     matches.sort((a, b) => getDate(b) - getDate(a));
     return matches.slice(0, 2);
   }
-  const etf = await scan('/etf-prices');
+  const etf = await scan('/api/v1/etf-prices');
   if (etf.length) return etf;
-  const stk = await scan('/stock-prices');
+  const stk = await scan('/api/v1/stock-prices');
   if (stk.length) return stk;
   return [];
 }
@@ -219,10 +219,10 @@ async function getSymbolName(symbol: string): Promise<string | undefined> {
   }
   try {
     const [stocksA, stocksB, stocksC, stocksD] = await Promise.all([
-      getWithRetry<any[]>('/stock-symbols', { identifier: symbol, limit: 5 }).catch(() => []),
-      getWithRetry<any[]>('/stock-symbols', { trading_symbol: symbol, limit: 5 }).catch(() => []),
-      getWithRetry<any[]>('/stock-symbols', { q: symbol, limit: 5 }).catch(() => []),
-      getWithRetry<any[]>('/stock-symbols', { search: symbol, limit: 5 }).catch(() => []),
+      getWithRetry<any[]>('/api/v1/stock-symbols', { identifier: symbol, limit: 5 }).catch(() => []),
+      getWithRetry<any[]>('/api/v1/stock-symbols', { trading_symbol: symbol, limit: 5 }).catch(() => []),
+      getWithRetry<any[]>('/api/v1/stock-symbols', { q: symbol, limit: 5 }).catch(() => []),
+      getWithRetry<any[]>('/api/v1/stock-symbols', { search: symbol, limit: 5 }).catch(() => []),
     ]);
     const stocks = [stocksA, stocksB, stocksC, stocksD].find((x) => Array.isArray(x) && x.length > 0) || [];
     
@@ -232,10 +232,10 @@ async function getSymbolName(symbol: string): Promise<string | undefined> {
   
   try {
     const [etfsA, etfsB, etfsC, etfsD] = await Promise.all([
-      getWithRetry<any[]>('/etf-symbols', { identifier: symbol, limit: 5 }).catch(() => []),
-      getWithRetry<any[]>('/etf-symbols', { trading_symbol: symbol, limit: 5 }).catch(() => []),
-      getWithRetry<any[]>('/etf-symbols', { q: symbol, limit: 5 }).catch(() => []),
-      getWithRetry<any[]>('/etf-symbols', { search: symbol, limit: 5 }).catch(() => []),
+      getWithRetry<any[]>('/api/v1/etf-symbols', { identifier: symbol, limit: 5 }).catch(() => []),
+      getWithRetry<any[]>('/api/v1/etf-symbols', { trading_symbol: symbol, limit: 5 }).catch(() => []),
+      getWithRetry<any[]>('/api/v1/etf-symbols', { q: symbol, limit: 5 }).catch(() => []),
+      getWithRetry<any[]>('/api/v1/etf-symbols', { search: symbol, limit: 5 }).catch(() => []),
     ]);
     const etfs = [etfsA, etfsB, etfsC, etfsD].find((x) => Array.isArray(x) && x.length > 0) || [];
     
@@ -248,7 +248,7 @@ async function getSymbolName(symbol: string): Promise<string | undefined> {
 
 export async function getDividends(symbol: string, limit: number = 20): Promise<DividendItem[]> {
   const safeSymbol = (symbol || '').trim().toUpperCase();
-  const { data } = await api.get('/dividends', { params: { identifier: safeSymbol, limit } });
+  const { data } = await api.get('/api/v1/dividends', { params: { identifier: safeSymbol, limit } });
   const arr: any[] = Array.isArray(data) ? data : [];
   return arr.map((d) => ({
     symbol: String(d.trading_symbol || safeSymbol).toUpperCase(),
@@ -283,9 +283,9 @@ export async function loadSymbolUniverse(): Promise<Array<{ symbol: string; name
 
   async function fetchStockSymbolsPage(off: number): Promise<any[]> {
     const tries = [
-      getWithRetry<any[]>('/stock-symbols', { offset: off, limit: PAGE_SIZE }),
-      getWithRetry<any[]>('/stock-symbols', { start: off, limit: PAGE_SIZE }),
-      getWithRetry<any[]>('/stock-symbols', { offset: off, page_size: PAGE_SIZE }),
+      getWithRetry<any[]>('/api/v1/stock-symbols', { offset: off, limit: PAGE_SIZE }),
+      getWithRetry<any[]>('/api/v1/stock-symbols', { start: off, limit: PAGE_SIZE }),
+      getWithRetry<any[]>('/api/v1/stock-symbols', { offset: off, page_size: PAGE_SIZE }),
     ];
     for (const p of tries) {
       try { const d = await p; if (Array.isArray(d) && d.length) return d; } catch {}
@@ -295,9 +295,9 @@ export async function loadSymbolUniverse(): Promise<Array<{ symbol: string; name
 
   async function fetchEtfSymbolsPage(off: number): Promise<any[]> {
     const tries = [
-      getWithRetry<any[]>('/etf-symbols', { offset: off, limit: PAGE_SIZE }),
-      getWithRetry<any[]>('/etf-symbols', { start: off, limit: PAGE_SIZE }),
-      getWithRetry<any[]>('/etf-symbols', { offset: off, page_size: PAGE_SIZE }),
+      getWithRetry<any[]>('/api/v1/etf-symbols', { offset: off, limit: PAGE_SIZE }),
+      getWithRetry<any[]>('/api/v1/etf-symbols', { start: off, limit: PAGE_SIZE }),
+      getWithRetry<any[]>('/api/v1/etf-symbols', { offset: off, page_size: PAGE_SIZE }),
     ];
     for (const p of tries) {
       try { const d = await p; if (Array.isArray(d) && d.length) return d; } catch {}
