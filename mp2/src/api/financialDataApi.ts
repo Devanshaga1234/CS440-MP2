@@ -152,34 +152,82 @@ function pickNumber(row: any, keys: string[]): number | undefined {
 
 export async function getQuote(symbol: string): Promise<Quote> {
   const safeSymbol = (symbol || '').trim().toUpperCase();
-  let arr: any[] = await fetchPrices(safeSymbol);
-  if (arr.length === 0) throw new Error('No price data returned');
-  const latest: any = arr[0] || {};
-  const prev: any = arr[1] || {};
-  const price = pickNumber(latest, ['close', 'adj_close', 'price', 'last', 'last_price', 'nav']) ?? 0;
-  const prevClose = pickNumber(prev, ['close', 'adj_close', 'price', 'last', 'last_price', 'nav']) ?? price;
-  const change = price - prevClose;
-  const changePercent = prevClose ? (change / prevClose) * 100 : undefined;
   
-  let name: string | undefined = extractNameFromRow(latest) || extractNameFromRow(prev);
-  if (!name) {
+  try {
+    let arr: any[] = await fetchPrices(safeSymbol);
+    if (arr.length === 0) {
+      console.warn(`No price data for ${safeSymbol}, trying fallback...`);
+      
+      // Try fallback: check if symbol exists in universe
+      const universe = await loadSymbolUniverse();
+      const found = universe.find(item => item.symbol === safeSymbol);
+      if (found) {
+        // Return a basic quote with name but no price data
+        return {
+          symbol: safeSymbol,
+          name: found.name,
+          price: 0,
+          change: 0,
+          changePercent: undefined,
+        };
+      }
+      
+      throw new Error(`No data available for ${safeSymbol}`);
+    }
+    
+    const latest: any = arr[0] || {};
+    const prev: any = arr[1] || {};
+    const price = pickNumber(latest, ['close', 'adj_close', 'price', 'last', 'last_price', 'nav']) ?? 0;
+    const prevClose = pickNumber(prev, ['close', 'adj_close', 'price', 'last', 'last_price', 'nav']) ?? price;
+    const change = price - prevClose;
+    const changePercent = prevClose ? (change / prevClose) * 100 : undefined;
+    
+    let name: string | undefined = extractNameFromRow(latest) || extractNameFromRow(prev);
+    if (!name) {
+      try {
+        name = await getSymbolName(safeSymbol);
+      } catch {}
+    }
+    
+    return {
+      symbol: safeSymbol,
+      name,
+      price,
+      change,
+      changePercent,
+      volume: pickNumber(latest, ['volume', 'vol']) ?? undefined,
+      dayLow: pickNumber(latest, ['low', 'day_low', 'nav_low']) ?? undefined,
+      dayHigh: pickNumber(latest, ['high', 'day_high', 'nav_high']) ?? undefined,
+      open: pickNumber(latest, ['open', 'nav_open']) ?? undefined,
+      previousClose: prevClose,
+    };
+  } catch (error) {
+    console.error(`Error getting quote for ${safeSymbol}:`, error);
+    
+    // Try to at least get the name from the symbol universe
     try {
-      name = await getSymbolName(safeSymbol);
+      const universe = await loadSymbolUniverse();
+      const found = universe.find(item => item.symbol === safeSymbol);
+      if (found) {
+        return {
+          symbol: safeSymbol,
+          name: found.name,
+          price: 0,
+          change: 0,
+          changePercent: undefined,
+        };
+      }
     } catch {}
+    
+    // Final fallback
+    return {
+      symbol: safeSymbol,
+      name: undefined,
+      price: 0,
+      change: 0,
+      changePercent: undefined,
+    };
   }
-  
-  return {
-    symbol: safeSymbol,
-    name,
-    price,
-    change,
-    changePercent,
-    volume: pickNumber(latest, ['volume', 'vol']) ?? undefined,
-    dayLow: pickNumber(latest, ['low', 'day_low', 'nav_low']) ?? undefined,
-    dayHigh: pickNumber(latest, ['high', 'day_high', 'nav_high']) ?? undefined,
-    open: pickNumber(latest, ['open', 'nav_open']) ?? undefined,
-    previousClose: prevClose,
-  };
 }
 
 const financialDataApi = { getQuote };
