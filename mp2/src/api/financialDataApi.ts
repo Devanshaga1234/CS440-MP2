@@ -51,7 +51,7 @@ async function getWithRetry<T = any>(path: string, params?: Record<string, any>,
         // Use CORS proxy for production
         const queryParams = new URLSearchParams({ ...(params || {}), key: API_KEY });
         const fullUrl = `https://financialdata.net${path}?${queryParams.toString()}`;
-        const { data } = await axios.get(`https://cors-proxy.htmldriven.com/?url=${encodeURIComponent(fullUrl)}`);
+        const { data } = await axios.get(`https://proxy.cors.sh/${fullUrl}`);
         return data as T;
       }
     } catch (err: any) {
