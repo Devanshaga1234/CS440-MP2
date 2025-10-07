@@ -50,7 +50,7 @@ async function getWithRetry<T = any>(path: string, params?: Record<string, any>,
       } else {
         const queryParams = new URLSearchParams({ ...(params || {}), key: API_KEY });
         const fullUrl = `https://financialdata.net${path}?${queryParams.toString()}`;
-        const { data } = await axios.get(`https://corsproxy.io/?${encodeURIComponent(fullUrl)}`);
+        const { data } = await axios.get(`https://thingproxy.freeboard.io/fetch/${encodeURIComponent(fullUrl)}`);
         return data as T;
       }
     } catch (err: any) {
