@@ -27,18 +27,60 @@ const HomePage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [quote, setQuote] = useState<any | null>(null);
+  const [logoUrl, setLogoUrl] = useState<string | undefined>(undefined);
+  const [logoError, setLogoError] = useState(false);
+  const [searchMode, setSearchMode] = useState<'symbol' | 'name'>('symbol');
 
   const fetchData = async () => {
-    const sym = symbol.trim().toUpperCase();
-    if (!sym) return;
+    const query = symbol.trim();
+    if (!query) return;
     setLoading(true);
     setError(null);
     try {
-      const [q, divs] = await Promise.all([getQuote(sym), getDividends(sym, 1)]);
+      const searchResults = await searchSymbols(query);
+      
+      let filteredResults = searchResults;
+      
+      if (searchMode === 'symbol') {
+        const upperQuery = query.toUpperCase();
+        filteredResults = searchResults.filter(r => 
+          r.symbol === upperQuery
+        );
+        console.log('Symbol search for:', upperQuery, 'Found:', filteredResults.length, 'results');
+      } else if (searchMode === 'name') {
+        filteredResults = searchResults.filter(r => 
+          r.name.toLowerCase().includes(query.toLowerCase())
+        );
+        filteredResults.sort((a, b) => {
+          const aExact = a.name.toLowerCase() === query.toLowerCase();
+          const bExact = b.name.toLowerCase() === query.toLowerCase();
+          if (aExact && !bExact) return -1;
+          if (bExact && !aExact) return 1;
+          return 0;
+        });
+      }
+      
+      if (filteredResults.length === 0) {
+        const modeText = searchMode === 'symbol' ? 'symbol' : 'company name';
+        setError(`No matching ${modeText} found`);
+        setQuote(null);
+        return;
+      }
+      
+      const firstMatch = filteredResults[0];
+      const [q, divs, logo] = await Promise.all([
+        getQuote(firstMatch.symbol), 
+        getDividends(firstMatch.symbol, 1),
+        getLogoForSymbol(firstMatch.symbol, firstMatch.name, firstMatch.kind)
+      ]);
       setQuote({ ...q, dividend: divs?.[0] });
+      setLogoUrl(logo);
+      setLogoError(false);
     } catch (e: any) {
-      setError(e?.message || 'Failed to fetch');
+      setError(e?.message || 'Failed to fetch data');
       setQuote(null);
+      setLogoUrl(undefined);
+      setLogoError(false);
     } finally {
       setLoading(false);
     }
@@ -47,20 +89,54 @@ const HomePage: React.FC = () => {
   return (
     <div className="page homePage">
       <NavTabs />
+      <div className="homeWelcome">
+        <h2>Welcome to Market Explorer</h2>
+        <p>Search for any stock or ETF by symbol or company name to view real-time market data</p>
+      </div>
+      <div className="searchToggle">
+        <label>Search by:</label>
+        <div className="toggleButtons">
+          <button 
+            className={searchMode === 'symbol' ? 'active' : ''} 
+            onClick={() => setSearchMode('symbol')}
+          >
+            Symbol
+          </button>
+          <button 
+            className={searchMode === 'name' ? 'active' : ''} 
+            onClick={() => setSearchMode('name')}
+          >
+            Name
+          </button>
+        </div>
+      </div>
       <div className="searchBar">
         <input
           value={symbol}
           onChange={(e) => setSymbol(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') fetchData(); }}
-          placeholder="Search by symbol or name"
+          placeholder={
+            searchMode === 'symbol' ? 'Enter Ticker (e.g., AAPL, MSFT)' :
+            'Enter Name (e.g., Apple, Microsoft)'
+          }
         />
         <button onClick={fetchData}>Search</button>
       </div>
       {loading && <p>Loading…</p>}
-      {error && <p>{error}</p>}
+      {error && <p className="errorMessage">{error}</p>}
       {quote && (
         <div className="detailCard">
           <div className="detailHeader">
+            {logoUrl && !logoError ? (
+              <img 
+                className="detailLogo" 
+                src={logoUrl} 
+                alt={`${quote.symbol} logo`}
+                onError={() => setLogoError(true)}
+              />
+            ) : (
+              <div className="logoFallback"><span>{quote.symbol}</span></div>
+            )}
             <div className="detailSymbol">{quote.symbol}</div>
             {quote.name && <div className="detailName">{quote.name}</div>}
           </div>
@@ -168,10 +244,7 @@ const GalleryPage: React.FC = () => {
             p.set('kind', kind);
             navigate(`/detail/${r.symbol}?${p.toString()}`);
           }}>
-            <div className="cardHeader">
-              <span className="cardBadge">{r.kind.toUpperCase()}</span>
-            </div>
-            <div className="cardContent">
+            <div className="cardLogoSection">
               {logos[r.symbol] && !brokenLogos[r.symbol] ? (
                 <img
                   className="cardLogo"
@@ -186,8 +259,11 @@ const GalleryPage: React.FC = () => {
                   <span>{r.symbol}</span>
                 </div>
               )}
+            </div>
+            <div className="cardInfo">
               <div className="cardSymbol">{r.symbol}</div>
               <div className="cardName">{r.name}</div>
+              <div className="cardType">{r.kind.toUpperCase()}</div>
             </div>
           </div>
         ))}

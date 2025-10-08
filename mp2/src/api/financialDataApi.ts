@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const BASE_URL = '/fd';
-const API_KEY = process.env.REACT_APP_FINANCIALDATA_API_KEY || '69d88fba77fd52259be201d482e4cccf';
+const API_KEY = '11bae4eeb55a588482a49856b5fa63c6';
 
 const api = axios.create({ baseURL: BASE_URL });
 
@@ -48,7 +48,6 @@ async function getWithRetry<T = any>(path: string, params?: Record<string, any>,
         const { data } = await api.get<T>(path, { params });
         return data as T;
       } else {
-        // Use CORS proxy for production
         const queryParams = new URLSearchParams({ ...(params || {}), key: API_KEY });
         const fullUrl = `https://financialdata.net${path}?${queryParams.toString()}`;
         const { data } = await axios.get(`https://api.allorigins.win/raw?url=${encodeURIComponent(fullUrl)}`);
@@ -109,8 +108,8 @@ async function fetchPrices(symbol: string): Promise<any[]> {
     } catch {}
   }
 
-  const MAX_SCAN_PAGES = 5;
-  const PAGE = 500;
+  const MAX_SCAN_PAGES = 200;
+  const PAGE = 1000;
   async function scan(path: string): Promise<any[]> {
     const matches: any[] = [];
     for (let page = 0; page < MAX_SCAN_PAGES; page += 1) {
@@ -198,8 +197,7 @@ export default financialDataApi;
 const symbolNameCache: Record<string, string> = {};
 
 let cachedUniverse: Array<{ symbol: string; name: string; kind: 'stock' | 'etf' }> | null = null;
-const UNIVERSE_LS_KEY = 'fd_symbol_universe_v1';
-const PAGE_SIZE = 500;
+const UNIVERSE_LS_KEY = 'fd_symbol_universe_v10_sequential';
 
 async function getSymbolName(symbol: string): Promise<string | undefined> {
   if (symbolNameCache[symbol]) return symbolNameCache[symbol];
@@ -302,60 +300,77 @@ export async function loadSymbolUniverse(): Promise<Array<{ symbol: string; name
   } catch {}
   const out: Array<{ symbol: string; name: string; kind: 'stock' | 'etf' }> = [];
   const seen = new Set<string>();
-  let offset = 0;
-  let pagesFetched = 0;
-  const MAX_PAGES = 10; 
-
-  async function fetchStockSymbolsPage(off: number): Promise<any[]> {
-    const tries = [
-      getWithRetry<any[]>('/api/v1/stock-symbols', { offset: off, limit: PAGE_SIZE }),
-      getWithRetry<any[]>('/api/v1/stock-symbols', { start: off, limit: PAGE_SIZE }),
-      getWithRetry<any[]>('/api/v1/stock-symbols', { offset: off, page_size: PAGE_SIZE }),
-    ];
-    for (const p of tries) {
-      try { const d = await p; if (Array.isArray(d) && d.length) return d; } catch {}
-    }
-    return [] as any[];
-  }
-
-  async function fetchEtfSymbolsPage(off: number): Promise<any[]> {
-    const tries = [
-      getWithRetry<any[]>('/api/v1/etf-symbols', { offset: off, limit: PAGE_SIZE }),
-      getWithRetry<any[]>('/api/v1/etf-symbols', { start: off, limit: PAGE_SIZE }),
-      getWithRetry<any[]>('/api/v1/etf-symbols', { offset: off, page_size: PAGE_SIZE }),
-    ];
-    for (const p of tries) {
-      try { const d = await p; if (Array.isArray(d) && d.length) return d; } catch {}
-    }
-    return [] as any[];
-  }
-
-  while (pagesFetched < MAX_PAGES) { 
-    const [stocks, etfs] = await Promise.all([
-      fetchStockSymbolsPage(offset),
-      fetchEtfSymbolsPage(offset),
-    ]);
-    if (Array.isArray(stocks)) {
-      for (const r of stocks) {
-        const sym = String(r.trading_symbol || '').toUpperCase();
-        if (!sym) continue;
-        if (!seen.has(sym)) { seen.add(sym); out.push({ symbol: sym, name: r.registrant_name || '', kind: 'stock' }); }
+ 
+  async function fetchAllStocks(): Promise<any[]> {
+    const allStocks: any[] = [];
+    let page = 0;
+    const limit = 1000;
+    while (page < 100) {
+      try {
+        const data = await getWithRetry<any[]>('/api/v1/stock-symbols', { offset: page * limit, limit });
+        if (!Array.isArray(data) || data.length === 0) break;
+        allStocks.push(...data);
+        console.log(`Loaded stocks page ${page + 1}: ${data.length} stocks. Total stocks: ${allStocks.length}`);
+        if (data.length < limit) break;
+        page++;
+        await new Promise(resolve => setTimeout(resolve, 50));
+      } catch (err) {
+        break;
       }
     }
-    if (Array.isArray(etfs)) {
-      for (const r of etfs) {
-        const sym = String(r.trading_symbol || '').toUpperCase();
-        if (!sym) continue;
-        if (!seen.has(sym)) { seen.add(sym); out.push({ symbol: sym, name: r.description || '', kind: 'etf' }); }
+    return allStocks;
+  }
+
+  async function fetchAllEtfs(): Promise<any[]> {
+    const allEtfs: any[] = [];
+    let page = 0;
+    const limit = 1000;
+    while (page < 100) {
+      try {
+        const data = await getWithRetry<any[]>('/api/v1/etf-symbols', { offset: page * limit, limit });
+        if (!Array.isArray(data) || data.length === 0) break;
+        allEtfs.push(...data);
+        console.log(`Loaded ETFs page ${page + 1}: ${data.length} ETFs. Total ETFs: ${allEtfs.length}`);
+        if (data.length < limit) break;
+        page++;
+        await new Promise(resolve => setTimeout(resolve, 50));
+      } catch (err) {
+        break;
       }
     }
-    const stocksLen = Array.isArray(stocks) ? stocks.length : 0;
-    const etfsLen = Array.isArray(etfs) ? etfs.length : 0;
-    if (stocksLen < PAGE_SIZE && etfsLen < PAGE_SIZE) break;
-    offset += PAGE_SIZE;
-    pagesFetched += 1;
+    return allEtfs;
   }
+
+  const [stocks, etfs] = await Promise.all([fetchAllStocks(), fetchAllEtfs()]);
+  
+  console.log(`Processing ${stocks.length} stocks and ${etfs.length} ETFs`);
+  
+  let stockCount = 0;
+  for (const r of stocks) {
+    const sym = String(r.trading_symbol || r.symbol || r.ticker || '').toUpperCase();
+    if (!sym || sym.length < 1 || sym.length > 10) continue;
+    const name = r.registrant_name || r.name || r.company_name || r.description || '';
+    if (!seen.has(sym)) { 
+      seen.add(sym); 
+      out.push({ symbol: sym, name: String(name), kind: 'stock' }); 
+      stockCount++;
+    }
+  }
+  
+  let etfCount = 0;
+  for (const r of etfs) {
+    const sym = String(r.trading_symbol || r.symbol || r.ticker || '').toUpperCase();
+    if (!sym || sym.length < 1 || sym.length > 10) continue;
+    const name = r.description || r.name || r.fund_name || r.registrant_name || '';
+    if (!seen.has(sym)) { 
+      seen.add(sym); 
+      out.push({ symbol: sym, name: String(name), kind: 'etf' }); 
+      etfCount++;
+    }
+  }
+  
   cachedUniverse = out;
+  console.log(`Finished loading symbols. Total: ${out.length} symbols (${stockCount} stocks, ${etfCount} ETFs)`);
   try {
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(UNIVERSE_LS_KEY, JSON.stringify(out));
@@ -388,13 +403,38 @@ export async function searchSymbols(
   }
   if (q) {
     filtered = filtered.filter(r => r.symbol.toLowerCase().includes(q) || r.name.toLowerCase().includes(q));
+    
+    filtered.sort((a, b) => {
+      const aSymbol = a.symbol.toLowerCase();
+      const bSymbol = b.symbol.toLowerCase();
+      const aName = a.name.toLowerCase();
+      const bName = b.name.toLowerCase();
+      
+      if (aSymbol === q && bSymbol !== q) return -1;
+      if (bSymbol === q && aSymbol !== q) return 1;
+      
+      if (aSymbol.startsWith(q) && !bSymbol.startsWith(q)) return -1;
+      if (bSymbol.startsWith(q) && !aSymbol.startsWith(q)) return 1;
+      
+      if (aName === q && bName !== q) return -1;
+      if (bName === q && aName !== q) return 1;
+      
+      if (aName.startsWith(q) && !bName.startsWith(q)) return -1;
+      if (bName.startsWith(q) && !aName.startsWith(q)) return 1;
+      
+      const av = (a as any)[sortBy] || '';
+      const bv = (b as any)[sortBy] || '';
+      const cmp = String(av).localeCompare(String(bv));
+      return direction === 'asc' ? cmp : -cmp;
+    });
+  } else {
+    filtered.sort((a, b) => {
+      const av = (a as any)[sortBy] || '';
+      const bv = (b as any)[sortBy] || '';
+      const cmp = String(av).localeCompare(String(bv));
+      return direction === 'asc' ? cmp : -cmp;
+    });
   }
-  filtered.sort((a, b) => {
-    const av = (a as any)[sortBy] || '';
-    const bv = (b as any)[sortBy] || '';
-    const cmp = String(av).localeCompare(String(bv));
-    return direction === 'asc' ? cmp : -cmp;
-  });
   return filtered;
 }
 
